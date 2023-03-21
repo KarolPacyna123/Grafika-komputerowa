@@ -34,7 +34,7 @@ function MatrixMul(a,b) //Mnożenie macierzy
 
 function startGL() 
 {
-  alert("StartGL");
+  //alert("StartGL");
   let canvas = document.getElementById("canvas3D"); //wyszukanie obiektu w strukturze strony 
   gl = canvas.getContext("experimental-webgl"); //pobranie kontekstu OpenGL'u z obiektu canvas
   gl.viewportWidth = canvas.width; //przypisanie wybranej przez nas rozdzielczości do systemu OpenGL
@@ -45,19 +45,25 @@ function startGL()
     precision highp float;
     attribute vec3 aVertexPosition; 
     attribute vec3 aVertexColor;
+    attribute vec2 aVertexCoords;
     uniform mat4 uMVMatrix;
     uniform mat4 uPMatrix;
     varying vec3 vColor;
+    varying vec2 vTexUV;
     void main(void) {
       gl_Position = uPMatrix * uMVMatrix * vec4(aVertexPosition, 1.0); //Dokonanie transformacji położenia punktów z przestrzeni 3D do przestrzeni obrazu (2D)
       vColor = aVertexColor;
+      vTexUV = aVertexCoords;
     }
   `;
   const fragmentShaderSource = `
     precision highp float;
     varying vec3 vColor;
+    varying vec2 vTexUV;
+    uniform sampler2D uSampler;
     void main(void) {
-      gl_FragColor = vec4(vColor,1.0); //Ustalenie stałego koloru wszystkich punktów sceny
+      //gl_FragColor = vec4(vColor,1.0); //Ustalenie stałego koloru wszystkich punktów sceny
+      gl_FragColor = texture2D(uSampler, vTexUV)*vec4(vColor, 1.0); //Odczytanie punktu tekstury i przypisanie go jako koloru danego punktu renderowaniej figury
     }
   `;
   let fragmentShader = gl.createShader(gl.FRAGMENT_SHADER); //Stworzenie obiektu shadera 
@@ -131,11 +137,52 @@ function startGL()
     0.0, 1.0, 1.0,  0.0, 1.0, 1.0,  0.0, 1.0, 1.0,
   ]
 
- vertexColorBuffer = gl.createBuffer();
-  gl.bindBuffer(gl.ARRAY_BUFFER, vertexColorBuffer);
-  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(vertexColor), gl.STATIC_DRAW);
-  vertexColorBuffer.itemSize = 3;
-  vertexColorBuffer.numItems = 12;
+  let vertexCoords = [
+  //Top
+    0.0, 0.0,  1.0, 0.0,  1.0, 1.0, //3 punkty po 2 składowe - U1,V1, U2,V2, U3,V3 - 1 trójkąt
+    0.0, 0.0,  1.0, 1.0,  0.0, 1.0,
+  //Left
+    1.0, 0.0,  1.0, 1.0,  0.0, 0.0, //x
+    0.0, 0.0,  1.0, 1.0,  0.0, 1.0,
+  //Right
+    0.0, 0.0,  1.0, 0.0,  1.0, 1.0,
+    0.0, 0.0,  1.0, 1.0,  0.0, 1.0,
+  //Front
+    1.0, 1.0,  1.0, 0.0,  0.0, 1.0,
+    0.0, 0.0,  0.0, 1.0,  1.0, 0.0,
+  //Back
+    0.0, 0.0,  1.0, 0.0,  1.0, 1.0,
+    0.0, 0.0,  1.0, 1.0,  0.0, 1.0,
+  //Bottom
+    0.0, 0.0,  0.0, 1.0,  1.0, 0.0,
+    1.0, 0.0,  0.0, 1.0,  1.0, 1.0,
+  ];
+
+  vertexColorBuffer = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, vertexColorBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(vertexColor), gl.STATIC_DRAW);
+    vertexColorBuffer.itemSize = 3;
+    vertexColorBuffer.numItems = 12;
+
+  vertexCoordsBuffer = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, vertexCoordsBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(vertexCoords), gl.STATIC_DRAW);
+    vertexCoordsBuffer.itemSize = 2;
+    vertexCoordsBuffer.numItems = 12;
+
+  textureBuffer = gl.createTexture();
+  var textureImg = new Image();
+  textureImg.onload = function() {
+    gl.bindTexture(gl.TEXTURE_2D, textureBuffer);
+    //gl.texImage2D(gl.TEXTURE_2D, 0, textureImg);
+    //gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 480, 480, 0, gl.RGBA, gl.UNSIGNED_BYTE, textureImg.image);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, textureImg);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  }
+  textureImg.src="Tex.png";
+  
   
   
   //Macierze opisujące położenie wirtualnej kamery w przestrzenie 3D
@@ -221,9 +268,17 @@ function Tick()
   gl.bindBuffer(gl.ARRAY_BUFFER, vertexColorBuffer);
   gl.vertexAttribPointer(gl.getAttribLocation(shaderProgram, "aVertexColor"), vertexColorBuffer.itemSize, gl.FLOAT, false, 0, 0);
   
+  gl.enableVertexAttribArray(gl.getAttribLocation(shaderProgram, "aVertexCoords"));  //Pass the geometry
+  gl.bindBuffer(gl.ARRAY_BUFFER, vertexCoordsBuffer);
+  gl.vertexAttribPointer(gl.getAttribLocation(shaderProgram, "aVertexCoords"), vertexCoordsBuffer.itemSize, gl.FLOAT, false, 0, 0);
+  
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindTexture(gl.TEXTURE_2D, textureBuffer);
+  gl.uniform1i(gl.getUniformLocation(shaderProgram, "uSampler"), 0);
+
   gl.drawArrays(gl.TRIANGLES, 0, vertexPositionBuffer.numItems*vertexPositionBuffer.itemSize); //Faktyczne wywołanie rendrowania
    
-  setTimeout(Tick,100);
+  setTimeout(Tick,1);
 }
 
 function handlekeydown(e)
@@ -239,6 +294,7 @@ function handlekeydown(e)
 </script>
 </head>
 <body onload="startGL()" onkeydown="handlekeydown(event)">
-<canvas id="canvas3D" width="640" height="480" style="border: solid black 1px"></canvas>
+  <canvas id="canvas3D" width="640" height="480" style="border: solid black 1px"></canvas>
+  <img id="textureImg" src="Tex.png">
 </body>
 </html>
